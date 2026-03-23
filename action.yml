@@ -1,8 +1,6 @@
 name: "evnx — .env Security & Validation"
 description: >
-  Validate, scan, diff, and doctor your .env files in CI.
-  Catches secrets, placeholder values, misconfigs, and
-  .env/.env.example drift — before they ship.
+  Scan, validate and secure .env files in CI — secret detection, misconfig checks and drift alerts.
 author: "urwithajit9"
 
 branding:
