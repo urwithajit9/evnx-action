@@ -22,7 +22,7 @@ on:
 
 jobs:
   commands:
-    name: ${{ matrix.command }} @ ${{ matrix.version }}
+    name: ${{ matrix.command }} @ ${{ matrix.version }} (format=${{ matrix.format || 'default' }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -83,6 +83,10 @@ jobs:
           env_file: test/fixtures/.env
           example_file: test/fixtures/.env.example
           format: ${{ matrix.format }}
+          # ⛔ Omitted on the first run, which made every "pinned" row install
+          # `latest` and test nothing. The suite built to catch vacuous checks
+          # shipped one. CI caught it immediately, which is the system working.
+          version: ${{ matrix.version }}
 
       - name: Assert the exit code
         shell: bash
@@ -90,7 +94,10 @@ jobs:
           want='${{ matrix.expect }}'
           outcome='${{ steps.evnx.outcome }}'
           got='${{ steps.evnx.outputs.exit_code }}'
-          echo "outcome=$outcome exit_code=$got expected=$want"
+          echo "step outcome : $outcome"
+          echo "exit_code     : ${got:-<empty>}"
+          echo "expected      : $want"
+          echo "evnx on PATH  : $(command -v evnx || echo none) $(evnx --version 2>/dev/null || true)"
 
           if [ "$want" = "fail-install" ]; then
             # The install must fail, and it must fail BEFORE producing an
@@ -128,9 +135,12 @@ jobs:
       - name: Install a different version first
         shell: bash
         run: |
+          # ⚠️ The tarball contains `evnx-<target-triple>`, NOT `evnx`. This
+          # helper shipped with the exact bug it exists to prove is fixed, and
+          # failed with a bare "install: No such file or directory".
           curl -fsSL "https://github.com/urwithajit9/evnx/releases/download/v0.8.0/evnx-x86_64-unknown-linux-musl.tar.gz" \
             | tar -xz
-          sudo install -m 755 evnx /usr/local/bin/evnx
+          sudo install -m 755 evnx-x86_64-unknown-linux-musl /usr/local/bin/evnx
           evnx --version
 
       - uses: ./
