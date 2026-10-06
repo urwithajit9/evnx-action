@@ -1,7 +1,7 @@
 # evnx — .env Security & Validation Action
 
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-evnx--action-blue?logo=github)](https://github.com/marketplace/actions/evnx-env-security-validation)
-[![evnx version](https://img.shields.io/badge/evnx-v0.3.7-green)](https://evnx.dev)
+[![evnx](https://img.shields.io/badge/evnx-CLI-green)](https://evnx.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > Validate, scan, diff, and doctor your `.env` files in CI — catching secrets, placeholder values, misconfigs, and drift before they ship.
@@ -46,7 +46,39 @@ jobs:
 | `example_file` | Path to the `.env.example` file | `.env.example` |
 | `convert_to` | Target format for the `convert` command | `json` |
 | `convert_output` | Output file path for `convert` | `""` |
-| `version` | evnx version to install | `latest` |
+| `version` | evnx **CLI** version, e.g. `v0.9.0` or `0.9.0`. See *Versioning* below | `latest` |
+
+
+## Versioning — two numbers, and they are not the same
+
+| | |
+|---|---|
+| `uses: urwithajit9/evnx-action@v1` | the **action's** version |
+| `with: version: v0.9.0` | the **evnx CLI** version it installs |
+
+⚠️ **Pinning one does not pin the other.** `@v1` tracks the latest v1.x of this
+action, which installs the latest CLI unless you say otherwise. To pin the tool
+your CI actually runs, set `version:`.
+
+```yaml
+- uses: urwithajit9/evnx-action@v1     # action: latest v1.x
+  with:
+    command: scan
+    version: v0.9.0                    # CLI: pinned
+```
+
+ⓘ This repository previously carried tags mirroring CLI versions
+(`v0.3.8` … `v0.9.0`) alongside action tags (`v1`, `v1.0.1`). Two numbering
+schemes in one namespace meant `@v0.9.0` looked like a CLI pin and was not.
+**The action now publishes `v1` / `v1.x` only.**
+
+ⓘ `v0.5.0` and `v0.5.1` of the CLI have no release assets — failed release runs.
+Pinning either fails the install with a 404, by design rather than silently.
+
+### Integrity
+
+Every install verifies the release's published `.sha256` before the binary runs.
+A mismatch aborts the step.
 
 ## Outputs
 
