@@ -61,10 +61,17 @@ action, which installs the latest CLI unless you say otherwise. To pin the tool
 your CI actually runs, set `version:`.
 
 ```yaml
-- uses: urwithajit9/evnx-action@v1     # action: latest v1.x
+- uses: urwithajit9/evnx-action@v1     # action: latest v1.x  ← recommended
   with:
     command: scan
     version: v0.9.0                    # CLI: pinned
+```
+
+Other refs for the action itself:
+
+```yaml
+uses: urwithajit9/evnx-action@v1.1.0   # an exact action release
+uses: urwithajit9/evnx-action@main     # unreleased — may break
 ```
 
 ⓘ This repository previously carried tags mirroring CLI versions
@@ -228,18 +235,6 @@ jobs:
 **Misconfiguration** — placeholder values (`YOUR_KEY_HERE`, `CHANGE_ME`), boolean string traps (`DEBUG="False"` is truthy in Python), weak `SECRET_KEY`, `localhost` URLs in production configs, suspicious port patterns.
 
 **Drift** — variables present in `.env` but missing from `.env.example`, and vice versa.
-
----
-
-## Versioning
-
-Pin to a major version for stability:
-
-```yaml
-uses: urwithajit9/evnx-action@v1        # stable — recommended
-uses: urwithajit9/evnx-action@v1.2.0    # exact version
-uses: urwithajit9/evnx-action@main      # latest — may break
-```
 
 ---
 
