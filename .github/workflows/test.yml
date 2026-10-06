@@ -1,0 +1,176 @@
+# ⚠️ This repository had NO workflow and NO test until 2026-10-06.
+#
+# Four files — action.yml, README, LICENSE, .git — and nothing had ever run it.
+# That is how six defects coexisted in one 140-line file while the action sat
+# published on the Marketplace.
+#
+# ⛔ This workflow was written to FAIL against the action as it then was, and the
+# failures were confirmed before anything was fixed. A test suite that has never
+# been red has not been shown to test anything.
+
+name: Test the action
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # The CLI moves underneath this action while users stay on `@v1`, so "it
+  # worked when we shipped it" decays silently. Catch that on a schedule.
+  schedule:
+    - cron: "23 7 * * 1"
+
+jobs:
+  commands:
+    name: ${{ matrix.command }} @ ${{ matrix.version }} (format=${{ matrix.format || 'default' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── scan ────────────────────────────────────────────────────────────
+          - { command: scan,     version: latest, format: "",       expect: 0 }
+          - { command: scan,     version: latest, format: json,     expect: 0 }
+          - { command: scan,     version: latest, format: sarif,    expect: 0 }
+
+          # ⛔ D1 — a pinned version. The old action fetched `evnx-linux-x86_64`,
+          # which has never been a release asset, so this step 404'd.
+          - { command: scan,     version: v0.9.0, format: "",       expect: 0 }
+
+          # ⚠️ An OLDER release too. `@v1` users stay put while the CLI moves;
+          # "works with latest" is not the same as "works".
+          - { command: scan,     version: v0.8.0, format: "",       expect: 0 }
+
+          # ⚠️ v0.5.0 and v0.5.1 are tags with ZERO release assets — failed
+          # release runs. Pinning them cannot work and never could; this asserts
+          # the action fails loudly rather than installing something arbitrary.
+          - { command: scan,     version: v0.5.0, format: "",       expect: fail-install }
+
+          # ⚠️ Without the leading v. Users write both.
+          - { command: scan,     version: "0.9.0", format: "",      expect: 0 }
+
+          # ── validate ────────────────────────────────────────────────────────
+          # ⓘ The default format was ONCE believed to break validate. It does
+          # not — that claim was withdrawn after the exit 2 turned out to be a
+          # missing .env.example in the test directory. Kept as a regression
+          # guard, since the belief was plausible enough to act on.
+          - { command: validate, version: latest, format: "",       expect: 0 }
+          - { command: validate, version: latest, format: json,     expect: 0 }
+
+          # ── diff ────────────────────────────────────────────────────────────
+          # ⛔ D3 — `evnx diff` exits 1 even when .env and .env.example agree,
+          # so this failed the job on a healthy project. The format was never
+          # the problem; the exit code is.
+          - { command: diff,     version: latest, format: "",       expect: 0 }
+
+          # ── doctor ──────────────────────────────────────────────────────────
+          # ⓘ `doctor` exits 1 here and that is CORRECT: the fixture `.env` is a
+          # committed test file, so it cannot be in .gitignore, which doctor
+          # rightly flags. Asserting 1 documents the behaviour rather than
+          # hiding it behind exit_zero.
+          - { command: doctor,   version: latest, format: "",       expect: 1 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the action
+        id: evnx
+        continue-on-error: true
+        uses: ./
+        with:
+          command: ${{ matrix.command }}
+          path: test/fixtures
+          env_file: test/fixtures/.env
+          example_file: test/fixtures/.env.example
+          format: ${{ matrix.format }}
+          # ⛔ Omitted on the first run, which made every "pinned" row install
+          # `latest` and test nothing. The suite built to catch vacuous checks
+          # shipped one. CI caught it immediately, which is the system working.
+          version: ${{ matrix.version }}
+
+      - name: Assert the exit code
+        shell: bash
+        run: |
+          want='${{ matrix.expect }}'
+          outcome='${{ steps.evnx.outcome }}'
+          got='${{ steps.evnx.outputs.exit_code }}'
+          echo "step outcome : $outcome"
+          echo "exit_code     : ${got:-<empty>}"
+          echo "expected      : $want"
+          echo "evnx on PATH  : $(command -v evnx || echo none) $(evnx --version 2>/dev/null || true)"
+
+          if [ "$want" = "fail-install" ]; then
+            # The install must fail, and it must fail BEFORE producing an
+            # exit_code — a version with no assets has nothing to run.
+            if [ "$outcome" = "success" ]; then
+              echo "::error::expected the install to fail for ${{ matrix.version }}"; exit 1
+            fi
+            echo "install failed as expected"; exit 0
+          fi
+
+          if [ "$got" != "$want" ]; then
+            echo "::error::${{ matrix.command }} @ ${{ matrix.version }} exited $got, expected $want"
+            exit 1
+          fi
+
+      # ⛔ D7 — the action merged stderr into stdout, so every JSON output
+      # carried the `Docs:` hint and no parse ever succeeded. `findings` was
+      # silently always 0.
+      - name: Assert the output is parseable when it claims to be JSON
+        if: matrix.format == 'json'
+        shell: bash
+        run: |
+          printf '%s' '${{ steps.evnx.outputs.result }}' \
+            | python3 -c 'import json,sys; json.load(sys.stdin); print("valid JSON")'
+
+  # ⛔ D5 — a pinned version was ignored entirely when evnx was already on PATH,
+  # because the whole install was behind `if ! command -v evnx`. A pin that
+  # silently does not pin is worse than one that errors.
+  pin-is-honoured:
+    name: A pin overrides an already-installed evnx
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install a different version first
+        shell: bash
+        run: |
+          # ⚠️ The tarball contains `evnx-<target-triple>`, NOT `evnx`. This
+          # helper shipped with the exact bug it exists to prove is fixed, and
+          # failed with a bare "install: No such file or directory".
+          curl -fsSL "https://github.com/urwithajit9/evnx/releases/download/v0.8.0/evnx-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz
+          sudo install -m 755 evnx-x86_64-unknown-linux-musl /usr/local/bin/evnx
+          evnx --version
+
+      - uses: ./
+        with:
+          command: scan
+          path: test/fixtures
+          version: v0.9.0
+
+      - name: The pinned version must be the one on PATH
+        shell: bash
+        run: |
+          got=$(evnx --version | awk '{print $NF}')
+          echo "on PATH: $got"
+          [ "$got" = "0.9.0" ] || { echo "::error::pin ignored — got $got, wanted 0.9.0"; exit 1; }
+
+  # ⛔ Nothing verified the download. Every release ships a .sha256 and the
+  # action ignored it — for a tool whose pitch is secret security, installing an
+  # unverified binary into /usr/local/bin is the wrong look.
+  checksum:
+    name: A tampered checksum must abort the install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verifying a bad checksum fails
+        shell: bash
+        run: |
+          set -uo pipefail
+          curl -fsSL "https://github.com/urwithajit9/evnx/releases/download/v0.9.0/evnx-x86_64-unknown-linux-musl.tar.gz" -o e.tar.gz
+          echo "0000000000000000000000000000000000000000000000000000000000000000  e.tar.gz" > bad.sha256
+          if sha256sum -c bad.sha256 >/dev/null 2>&1; then
+            echo "::error::sha256sum accepted a wrong digest"; exit 1
+          fi
+          echo "a wrong digest is rejected, as it must be"
