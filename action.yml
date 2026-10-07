@@ -247,16 +247,21 @@ runs:
         set -e
         STDERR=$(cat "$ERRFILE"); rm -f "$ERRFILE"
 
-        [ -n "$OUTPUT" ] && echo "$OUTPUT"
-        [ -n "$STDERR" ] && echo "$STDERR" >&2
-        echo "::endgroup::"
-
-        # ⛔ `evnx diff` exits 1 whenever ANY value differs — and a .env.example
-        # holds empty placeholders, so a perfectly healthy project always has
-        # differing values. Gating CI on its exit code fails every build.
+        # ⛔ SECURITY — `evnx diff --format json` emits RAW SECRET VALUES in
+        # `env_value`, with or without --show-values. This action forces json
+        # for diff (the exit code is unusable otherwise), so echoing or
+        # exporting that output would print production secrets into the workflow
+        # log and into `steps.<id>.outputs.result`.
         #
-        # Drift is `missing` and `extra`. `different` is not drift; it is what a
-        # template looks like.
+        # ⚠️ v1.1.0 did exactly that. v1.0.1 did not, because it passed an
+        # unrecognised format that diff silently downgraded to pretty, which
+        # redacts. The fix for the exit code made the leak.
+        #
+        # Key NAMES are not secret — the server stores them in the clear by
+        # design — so the summary below reports names and counts, never values.
+        # ⛔ `evnx diff` exits 1 whenever ANY value differs — and a .env.example
+        # holds empty placeholders, so a perfectly healthy project always does.
+        # Drift is `missing` and `extra`; `different` is what a template looks like.
         if [ "$CMD" = "diff" ]; then
           # ⚠️ One line on purpose: multi-line python inside a YAML block
           # scalar must stay indented or it escapes the scalar, which is a
@@ -273,9 +278,17 @@ runs:
             CODE=1
           fi
           FINDINGS="$DRIFT"
+
+          # ⛔ Replace the raw JSON before anything prints or exports it.
+          OUTPUT=$(printf '%s' "$OUTPUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("missing",[]); e=d.get("extra",[]); n=lambda x: x.get("key",x) if isinstance(x,dict) else x; print("missing from .env: " + (", ".join(str(n(k)) for k in m) or "none")); print("not in the example: " + (", ".join(str(n(k)) for k in e) or "none")); print("values differing: %d (names only — evnx never prints values here)" % len(d.get("different",[])))' 2>/dev/null || echo "diff completed")
         fi
 
-        # Findings, when the output is JSON we can actually parse.
+        [ -n "$OUTPUT" ] && echo "$OUTPUT"
+        [ -n "$STDERR" ] && echo "$STDERR" >&2
+        echo "::endgroup::"
+
+        # Findings, for the commands whose JSON we can parse.
+        # ⓘ diff set FINDINGS already, above, where the drift is derived.
         if [ "${FINDINGS:-}" = "" ]; then
           FINDINGS=$(printf '%s' "$OUTPUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("findings", d.get("errors", []))))' 2>/dev/null || echo 0)
         fi
