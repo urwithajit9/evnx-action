@@ -117,8 +117,30 @@ runs:
         echo "::group::Installing evnx ($VERSION)"
 
         if [ "$VERSION" = "latest" ]; then
-          VERSION=$(curl -fsSL https://api.github.com/repos/urwithajit9/evnx/releases/latest \
-                    | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')
+          # ⚠️ The HTML redirect, not api.github.com.
+          #
+          # The API allows 60 unauthenticated requests per hour **per IP**, and
+          # GitHub Actions runners share a small pool of egress addresses with
+          # every other Actions user on the platform. So this call returns 403
+          # at times that have nothing to do with this repository — and under
+          # `curl -f` plus `set -e` that kills the install outright, leaving the
+          # job with no evnx on PATH and an error that points at the wrong
+          # thing. Seven matrix rows resolve `latest`, so one run is seven
+          # draws against a budget it does not control.
+          #
+          # `releases/latest` redirects to `releases/tag/<tag>`, so the tag is
+          # the last path segment. Verified to return the same value as the
+          # API's `tag_name`.
+          VERSION=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+                    https://github.com/urwithajit9/evnx/releases/latest)
+          VERSION="${VERSION##*/}"
+          # ⚠️ Without this, a request that does not redirect leaves VERSION as
+          # the literal "latest", which becomes the tag `vlatest` two lines
+          # down and 404s on the asset — reporting a missing release for what
+          # is actually a resolution failure.
+          if [ -z "$VERSION" ] || [ "$VERSION" = "latest" ]; then
+            echo "::error::could not resolve the latest evnx release"; exit 1
+          fi
           echo "latest resolves to $VERSION"
         fi
 
