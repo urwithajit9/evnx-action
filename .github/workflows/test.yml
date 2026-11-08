@@ -73,6 +73,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ⓘ The fixture .env is committed so the suite has something to read, and
+      # since 0.13.0 validate rightly fails a tracked .env (`env_tracked`). A
+      # healthy project does not commit it, so untrack it in this checkout only:
+      # the file stays on disk, the commit is untouched. Not for doctor, whose
+      # row asserts the committed-file finding on purpose.
+      - name: Untrack the fixture .env (validate is testing a healthy project)
+        if: matrix.command == 'validate'
+        run: git rm --cached --quiet test/fixtures/.env
+
       - name: Run the action
         id: evnx
         continue-on-error: true
