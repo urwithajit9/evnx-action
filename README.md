@@ -39,7 +39,7 @@ jobs:
 |---|---|---|
 | `command` | evnx command: `scan` \| `validate` \| `diff` \| `doctor` \| `convert` \| `sync` | `scan` |
 | `path` | Directory or file to operate on | `.` |
-| `format` | Output format: `github` \| `json` \| `sarif` \| `pretty` \| `github-actions` | `github` |
+| `format` | Output format. `scan`: `pretty` \| `json` \| `sarif` \| `github`; `validate`: `pretty` \| `json` \| `github-actions`; `diff`: `pretty` \| `json` \| `patch` | `""` (each command's own default) |
 | `strict` | Exit 1 on warnings, not just errors | `false` |
 | `exit_zero` | Report findings but always exit 0 | `false` |
 | `env_file` | Path to the `.env` file | `.env` |
@@ -70,14 +70,16 @@ your CI actually runs, set `version:`.
 Other refs for the action itself:
 
 ```yaml
-uses: urwithajit9/evnx-action@v1.1.0   # an exact action release
+uses: urwithajit9/evnx-action@v1.2.0   # an exact action release
 uses: urwithajit9/evnx-action@main     # unreleased — may break
 ```
 
-ⓘ This repository previously carried tags mirroring CLI versions
-(`v0.3.8` … `v0.9.0`) alongside action tags (`v1`, `v1.0.1`). Two numbering
-schemes in one namespace meant `@v0.9.0` looked like a CLI pin and was not.
-**The action now publishes `v1` / `v1.x` only.**
+ⓘ This repository also carries tags that mirror CLI versions (`v0.3.8` …
+`v0.13.0`, and a floating `v0`), created by the evnx release pipeline until
+2026-11. Two numbering schemes in one namespace meant `@v0.13.0` looked like a
+CLI pin and was not. They are kept so existing workflows don't break, but
+**don't use them: the action publishes `v1` / `v1.x` only.** Pin the CLI with
+`version:`.
 
 ⓘ `v0.5.0` and `v0.5.1` of the CLI have no release assets — failed release runs.
 Pinning either fails the install with a 404, by design rather than silently.
@@ -103,17 +105,30 @@ A mismatch aborts the step.
 
 ```yaml
 - name: Scan for secrets → Security tab
+  id: evnx
   uses: urwithajit9/evnx-action@v1
   with:
     command: scan
     format: sarif
+    exit_zero: "true"       # let the upload run; the Security tab shows findings
+
+- name: Write the SARIF file
+  if: always()
+  env:
+    SARIF: ${{ steps.evnx.outputs.result }}
+  run: printf '%s' "$SARIF" > evnx.sarif
 
 - name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v3
-  with:
-    sarif_file: evnx-results.sarif
   if: always()
+  uses: github/codeql-action/upload-sarif@v4
+  with:
+    sarif_file: evnx.sarif
+    category: evnx
 ```
+
+ⓘ The action does not write a file: the SARIF document is the step's `result`
+output, written to disk in the second step. Step outputs are limited to 1 MB per
+job, which a scan stays well under unless it reports thousands of findings.
 
 ### Validate — strict mode (block on warnings)
 
@@ -203,16 +218,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan for secrets
+        id: scan
         uses: urwithajit9/evnx-action@v1
         with:
           command: scan
           format: sarif
+          exit_zero: "true"
+
+      - name: Write the SARIF file
+        if: always()
+        env:
+          SARIF: ${{ steps.scan.outputs.result }}
+        run: printf '%s' "$SARIF" > evnx.sarif
 
       - name: Upload SARIF to Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: evnx-scan.sarif
         if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: evnx.sarif
+          category: evnx
 
       - name: Validate configuration
         uses: urwithajit9/evnx-action@v1
