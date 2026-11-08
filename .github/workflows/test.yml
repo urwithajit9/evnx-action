@@ -73,6 +73,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ⓘ The fixture .env is committed so the suite has something to read, and
+      # since 0.13.0 validate rightly fails a tracked .env (`env_tracked`). A
+      # healthy project does not commit it, so untrack it in this checkout only:
+      # the file stays on disk, the commit is untouched. Not for doctor, whose
+      # row asserts the committed-file finding on purpose.
+      - name: Untrack the fixture .env (validate is testing a healthy project)
+        if: matrix.command == 'validate'
+        run: git rm --cached --quiet test/fixtures/.env
+
       - name: Run the action
         id: evnx
         continue-on-error: true
@@ -124,9 +133,11 @@ jobs:
             | python3 -c 'import json,sys; json.load(sys.stdin); print("valid JSON")'
 
   # ⛔ validate's `findings` was 0 on every run, failing or not: the action read
-  # `findings` / `errors`, and validate's JSON lists `issues`. The fixture has
-  # exactly two errors — a missing variable and a weak secret — on every release
-  # from 0.10.0 to 0.10.3, so the count is not version-dependent.
+  # `findings` / `errors`, and validate's JSON lists `issues`. The fixture always
+  # holds a missing variable and a weak secret. The total is version-dependent:
+  # 0.13.0 added `env_tracked`, which fires because this fixture .env is
+  # committed. So assert `findings` against validate's own error count and
+  # require the two known issues, never a fixed number.
   validate-findings:
     name: validate reports its error count as findings
     runs-on: ubuntu-latest
@@ -145,13 +156,24 @@ jobs:
 
       - name: Assert findings is the error count
         shell: bash
+        env:
+          FINDINGS: ${{ steps.evnx.outputs.findings }}
+          RESULT: ${{ steps.evnx.outputs.result }}
         run: |
-          got='${{ steps.evnx.outputs.findings }}'
-          echo "findings: $got"
-          if [ "$got" != "2" ]; then
-            echo "::error::expected 2 findings (missing_variable, weak_secret), got $got"
-            exit 1
-          fi
+          echo "findings: $FINDINGS"
+          printf '%s' "$RESULT" | python3 -c '
+          import json, os, sys
+          d = json.load(sys.stdin)
+          errors = d["summary"]["errors"]
+          types = {i["type"] for i in d["issues"] if i["severity"] == "error"}
+          got = os.environ["FINDINGS"]
+          if got != str(errors):
+              sys.exit(f"::error::findings={got} but validate counted {errors} errors")
+          missing = {"missing_variable", "weak_secret"} - types
+          if missing:
+              sys.exit(f"::error::expected issues not reported: {sorted(missing)}")
+          print(f"ok: {errors} errors, types {sorted(types)}")
+          '
 
   # ⛔ D5 — a pinned version was ignored entirely when evnx was already on PATH,
   # because the whole install was behind `if ! command -v evnx`. A pin that

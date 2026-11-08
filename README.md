@@ -46,7 +46,7 @@ jobs:
 | `example_file` | Path to the `.env.example` file | `.env.example` |
 | `convert_to` | Target format for the `convert` command | `json` |
 | `convert_output` | Output file path for `convert` | `""` |
-| `version` | evnx **CLI** version, e.g. `v0.10.0` or `0.10.0`. See *Versioning* below | `latest` |
+| `version` | evnx **CLI** version, e.g. `v0.13.0` or `0.13.0`. See *Versioning* below | `latest` |
 
 
 ## Versioning — two numbers, and they are not the same
@@ -54,7 +54,7 @@ jobs:
 | | |
 |---|---|
 | `uses: urwithajit9/evnx-action@v1` | the **action's** version |
-| `with: version: v0.10.0` | the **evnx CLI** version it installs |
+| `with: version: v0.13.0` | the **evnx CLI** version it installs |
 
 ⚠️ **Pinning one does not pin the other.** `@v1` tracks the latest v1.x of this
 action, which installs the latest CLI unless you say otherwise. To pin the tool
@@ -64,7 +64,7 @@ your CI actually runs, set `version:`.
 - uses: urwithajit9/evnx-action@v1     # action: latest v1.x  ← recommended
   with:
     command: scan
-    version: v0.10.0                   # CLI: pinned
+    version: v0.13.0                   # CLI: pinned
 ```
 
 Other refs for the action itself:
