@@ -28,8 +28,13 @@ jobs:
         uses: urwithajit9/evnx-action@v1
         with:
           command: scan
+          severity: high        # block the PR on high and critical findings
           format: github        # inline PR annotations
 ```
+
+`severity` is the lowest level that is reported, counted and fails the job
+(`critical` \| `high` \| `medium` \| `low`); leave it out to report everything.
+It needs evnx ≥ 0.13.0, which `latest` is — see *Versioning* if you pin `version:`.
 
 ---
 
@@ -42,6 +47,8 @@ jobs:
 | `format` | Output format. `scan`: `pretty` \| `json` \| `sarif` \| `github`; `validate`: `pretty` \| `json` \| `github-actions`; `diff`: `pretty` \| `json` \| `patch` | `""` (each command's own default) |
 | `strict` | Exit 1 on warnings, not just errors | `false` |
 | `exit_zero` | Report findings but always exit 0 | `false` |
+| `severity` | `scan` only. Lowest severity to report, count and exit on: `critical` \| `high` \| `medium` \| `low`. `high` is the usual CI gate. Needs evnx ≥ 0.13.0 (older CLIs filtered on confidence — the action warns) | `""` (the CLI's default, `low`) |
+| `confidence` | `scan` only. Lowest confidence to report, count and exit on: `high` \| `medium` \| `low`. A finding must pass both `severity` and `confidence`. Needs evnx ≥ 0.13.0 — fails with a clear message on an older `version:` | `""` (the CLI's default, `low`) |
 | `env_file` | Path to the `.env` file | `.env` |
 | `example_file` | Path to the `.env.example` file | `.env.example` |
 | `convert_to` | Target format for the `convert` command | `json` |
