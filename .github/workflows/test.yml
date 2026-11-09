@@ -226,3 +226,197 @@ jobs:
             echo "::error::sha256sum accepted a wrong digest"; exit 1
           fi
           echo "a wrong digest is rejected, as it must be"
+
+  # ⛔ `severity` / `confidence` did not exist, so a user could not gate a PR on
+  # severity at all. the run-time fixture (built below) holds exactly two findings under 0.13.0:
+  # DB_PASSWORD (severity high) and a Stripe TEST key (severity low). So the
+  # counts are 2 by default, 1 at `high`, 0 at `critical` — real numbers, not
+  # "fewer than". (test/fixtures-invalid is a validate fixture: `scan` finds
+  # nothing in it, so it cannot show a severity filter working.)
+  severity-filters:
+    name: severity filters the findings count
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ⛔ No secret-shaped value is committed (push protection, owner rule): the
+      # fixture is built at run time from parts, so no full key is ever in a file.
+      - name: Create the scan fixture
+        shell: bash
+        run: |
+          d="${{ runner.temp }}/fixtures-scan"
+          mkdir -p "$d"
+          a='sk_'; b='test_'; c='4eC39HqLyjWD'; e='arjtT1zdp7dc'
+          printf 'APP_NAME=evnx-action-test\nDB_PASSWORD=hunter2hunter2\nSTRIPE_TEST_KEY=%s%s%s%s\n' "$a" "$b" "$c" "$e" > "$d/.env"
+
+      - name: Default (no severity)
+        id: all
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          format: json
+          exit_zero: "true"
+
+      - name: severity high
+        id: high
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          format: json
+          exit_zero: "true"
+          severity: high
+
+      - name: severity critical
+        id: critical
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          format: json
+          exit_zero: "true"
+          severity: critical
+
+      # Without exit_zero the gate must actually gate: high fails, critical passes.
+      - name: Gate at high (must fail)
+        id: gate-high
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          severity: high
+
+      - name: Gate at critical (must pass)
+        id: gate-critical
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          severity: critical
+
+      - name: Assert the counts and the gates
+        shell: bash
+        env:
+          ALL: ${{ steps.all.outputs.findings }}
+          HIGH: ${{ steps.high.outputs.findings }}
+          CRITICAL: ${{ steps.critical.outputs.findings }}
+          GATE_HIGH: ${{ steps.gate-high.outputs.exit_code }}
+          GATE_CRITICAL: ${{ steps.gate-critical.outputs.exit_code }}
+        run: |
+          echo "default=$ALL high=$HIGH critical=$CRITICAL gate-high exit=$GATE_HIGH gate-critical exit=$GATE_CRITICAL"
+          fail=0
+          [ "$ALL" = "2" ]      || { echo "::error::default reported $ALL findings, expected 2"; fail=1; }
+          [ "$HIGH" = "1" ]     || { echo "::error::severity high reported $HIGH findings, expected 1"; fail=1; }
+          [ "$CRITICAL" = "0" ] || { echo "::error::severity critical reported $CRITICAL findings, expected 0"; fail=1; }
+          [ "$GATE_HIGH" = "1" ]     || { echo "::error::severity high exited $GATE_HIGH, expected 1"; fail=1; }
+          [ "$GATE_CRITICAL" = "0" ] || { echo "::error::severity critical exited $GATE_CRITICAL, expected 0"; fail=1; }
+          exit $fail
+
+  # A typo must fail the step with the action's own message, before evnx runs —
+  # so there is no exit_code output, which is what separates this from a CLI error.
+  severity-invalid:
+    name: an invalid severity fails the step
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ⛔ No secret-shaped value is committed (push protection, owner rule): the
+      # fixture is built at run time from parts, so no full key is ever in a file.
+      - name: Create the scan fixture
+        shell: bash
+        run: |
+          d="${{ runner.temp }}/fixtures-scan"
+          mkdir -p "$d"
+          a='sk_'; b='test_'; c='4eC39HqLyjWD'; e='arjtT1zdp7dc'
+          printf 'APP_NAME=evnx-action-test\nDB_PASSWORD=hunter2hunter2\nSTRIPE_TEST_KEY=%s%s%s%s\n' "$a" "$b" "$c" "$e" > "$d/.env"
+
+      - name: severity urgent
+        id: bad-severity
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          severity: urgent
+
+      - name: confidence extreme
+        id: bad-confidence
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          confidence: extreme
+
+      - name: Assert both failed in validation
+        shell: bash
+        run: |
+          fail=0
+          for s in bad-severity:'${{ steps.bad-severity.outcome }}':'${{ steps.bad-severity.outputs.exit_code }}' \
+                   bad-confidence:'${{ steps.bad-confidence.outcome }}':'${{ steps.bad-confidence.outputs.exit_code }}'; do
+            IFS=: read -r name outcome code <<< "$s"
+            echo "$name: outcome=$outcome exit_code=${code:-<none>}"
+            [ "$outcome" = "failure" ] || { echo "::error::$name should have failed, got $outcome"; fail=1; }
+            [ -z "$code" ] || { echo "::error::$name reached evnx (exit_code=$code); validation should reject it first"; fail=1; }
+          done
+          exit $fail
+
+  # `--confidence` does not exist before 0.13.0. The action must say so itself.
+  confidence-needs-0-13:
+    name: confidence on an old CLI fails clearly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ⛔ No secret-shaped value is committed (push protection, owner rule): the
+      # fixture is built at run time from parts, so no full key is ever in a file.
+      - name: Create the scan fixture
+        shell: bash
+        run: |
+          d="${{ runner.temp }}/fixtures-scan"
+          mkdir -p "$d"
+          a='sk_'; b='test_'; c='4eC39HqLyjWD'; e='arjtT1zdp7dc'
+          printf 'APP_NAME=evnx-action-test\nDB_PASSWORD=hunter2hunter2\nSTRIPE_TEST_KEY=%s%s%s%s\n' "$a" "$b" "$c" "$e" > "$d/.env"
+
+      - name: confidence high on v0.9.0
+        id: old
+        continue-on-error: true
+        uses: ./
+        with:
+          command: scan
+          path: ${{ runner.temp }}/fixtures-scan
+          version: v0.9.0
+          confidence: high
+
+      - name: Assert it failed before evnx ran
+        shell: bash
+        run: |
+          echo "outcome=${{ steps.old.outcome }} exit_code='${{ steps.old.outputs.exit_code }}'"
+          [ '${{ steps.old.outcome }}' = "failure" ] || { echo "::error::expected failure"; exit 1; }
+          [ -z '${{ steps.old.outputs.exit_code }}' ] || { echo "::error::evnx ran; the action should have refused first"; exit 1; }
+
+  # severity set on a command that ignores it must warn and otherwise behave.
+  severity-ignored-elsewhere:
+    name: severity on validate is ignored, not an error
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: validate with severity
+        id: v
+        uses: ./
+        with:
+          command: validate
+          format: json
+          exit_zero: "true"
+          severity: high
+          env_file: test/fixtures-invalid/.env
+          example_file: test/fixtures-invalid/.env.example
+
+      - name: Assert validate still ran
+        shell: bash
+        run: |
+          [ -n '${{ steps.v.outputs.exit_code }}' ] || { echo "::error::validate did not run"; exit 1; }
